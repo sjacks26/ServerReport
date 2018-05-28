@@ -468,19 +468,6 @@ def send_daily_email(computer_stats, process_stats, email_recipients=cfg.daily_s
     logging.info(today.isoformat() + ':  {0}: Status {1}'.format(cfg.server_name, status))
 
 
-def log(log_contents):
-    """
-    This function writes to a log file.
-    """
-    if cfg.script_log_file:
-        with open(cfg.script_log_file, 'a+') as l:
-            l.write(log_contents)
-            l.write('\n')
-    if cfg.print_output_to_terminal:
-        print(log_contents)
-        print('\n')
-
-
 def script_error_email(error, email_recipients=cfg.warning_email_recipients):
     """
     This function immediately sends a warning email if the server watch code raises an exception.
