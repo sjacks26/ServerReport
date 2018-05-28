@@ -370,7 +370,7 @@ def daily_email_contents(log_dir=cfg.stats_archive_dir):
     This function compiles the information to be included in the daily email
     """
     today = datetime.date.today()
-    yesterday = today.replace(day=(today.day-1)).isoformat()
+    yesterday = today.replace(day=(today.day-1))
     log = log_dir + '/stats_log.csv'
     stats_to_report = {}
     if not os.path.isfile(log):
