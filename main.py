@@ -21,8 +21,11 @@ import time
 import smtplib
 import numpy as np
 import pymongo
+import logging
 
 import config as cfg
+
+logging.basicConfig(filename=cfg.script_log_file,filemode='a+',level=logging.INFO)
 
 warning_flags = {
     'CPU': 0,
@@ -138,7 +141,7 @@ def check_process_status(process_list=cfg.processes_to_monitor):
             process_info = [time, 'Process not running','','','','','']
         processes_info[process] = process_info
     if broken_processes:
-        log('BROKEN PROCESS(ES): {}'.format(broken_processes))
+        logging.critical('BROKEN PROCESS(ES): {}'.format(broken_processes))
         if processes_to_email:
             trigger_process_warning(processes_to_email)
     return processes_info, process_flags
@@ -172,7 +175,7 @@ def log_stats(cpu, ram, hard_drive, boot_drive, processes, log_dir=cfg.stats_arc
     now = datetime.datetime.now().replace(microsecond=0)
     date = str(now.date())
     time = str(now.isoformat().split('T')[1])
-    log(time)
+    logging.info(time)
     os.makedirs(log_dir, exist_ok=True)
     log_file = log_dir + '/stats_log.csv'
 
@@ -283,13 +286,15 @@ def trigger_warning_email(cpu, ram, hard_drive, boot_drive, warn_thresholds=cfg.
     warning_contents = '{0}: \n\t\t'.format(warning_level) + '\n'.join(warning_contents)
 
     if warning:
-        if not warning_level:
+        if warning_level:
+            logging.critical(warning_contents)
+        elif not warning_level:
             warning_level = "Warning"
-        log(warning_contents)
+            logging.warning(warning_contents)
         if stats_to_email:
             send_warning_email((stats_to_email, warning_level))
     else:
-        log("No warning")
+        logging.info("No warning")
 
 
 def send_warning_email(warning_stats, email_recipients=cfg.warning_email_recipients):
@@ -327,7 +332,7 @@ def prepare_process_summary(processes=cfg.processes_to_monitor):
         log_from_yesterday = folder + '/' + yesterday + '.csv'
         if not os.path.isfile(log_from_yesterday):
             stats_to_report = '**No log file for {}**'.format(yesterday)
-            log(process + ': ' + stats_to_report)
+            logging.warning(process + ': ' + stats_to_report)
         else:
             with open(log_from_yesterday, 'r') as f:
                 log_contents = pd.read_csv(f)
@@ -374,40 +379,46 @@ def daily_email_contents(log_dir=cfg.stats_archive_dir):
     log = log_dir + '/stats_log.csv'
     stats_to_report = {}
     if not os.path.isfile(log):
-        stats_to_report = '**No stats log file for {}**'.format(yesterday)
-        log(stats_to_report)
+        stats_to_report = '**No stats log file!**'
+        logging.warning(stats_to_report)
+        return stats_to_report
     else:
         with open(log, 'r') as f:
             log_contents = pd.read_csv(f,parse_dates=[0])
             log_contents['date'] = [datetime.datetime.date(d) for d in log_contents['time']]
             log_from_yesterday = log_contents[log_contents['date'] == yesterday]
-            metrics = list(log_from_yesterday.columns)
-            averaged_metrics = ['% CPU use','% RAM used']
-            for m in metrics[1:]:
-                if m in averaged_metrics:
-                    size = ''
-                    data_points = log_from_yesterday[m]
-                    if not type(data_points[0]) is np.float64:
-                        size = data_points.str.slice(start=-1)[0]
-                        data_points = data_points.str.slice(stop=-1)
-                        data_points = pd.to_numeric(data_points)
-                    data_to_report = str(round(np.mean(data_points), 2))
-                    if '%' in m:
-                        data_to_report = data_to_report + '%'
-                    if size:
-                        data_to_report = data_to_report + size
-                elif m not in averaged_metrics:
-                    data_to_report = str(log_from_yesterday[m].iloc[-1])
-                stats_to_report[m] = data_to_report
-    cpu = stats_to_report['% CPU use'][:-1]
-    ram = stats_to_report['% RAM used'][:-1]
-    hard_drive = stats_to_report['free hard drive space'][:-1]
-    boot_drive = stats_to_report['% boot drive used'][1]
-    warning = trigger_warning_email(cpu, ram, hard_drive, boot_drive)
-    if warning:
-        return stats_to_report, warning[1]
-    else:
-        return stats_to_report
+            if not log_from_yesterday.shape[0] > 0:
+                stats_to_report = '**No stats information for {}**'.format(yesterday)
+                logging.warning(stats_to_report)
+                warning = (None, 'Warning')
+            elif log_from_yesterday.shape[0] > 0:
+                metrics = list(log_from_yesterday.columns)
+                averaged_metrics = ['% CPU use','% RAM used']
+                for m in metrics[1:]:
+                    if m in averaged_metrics:
+                        size = ''
+                        data_points = log_from_yesterday[m]
+                        if not type(data_points[0]) is np.float64:
+                            size = data_points.str.slice(start=-1)[0]
+                            data_points = data_points.str.slice(stop=-1)
+                            data_points = pd.to_numeric(data_points)
+                        data_to_report = str(round(np.mean(data_points), 2))
+                        if '%' in m:
+                            data_to_report = data_to_report + '%'
+                        if size:
+                            data_to_report = data_to_report + size
+                    elif m not in averaged_metrics:
+                        data_to_report = str(log_from_yesterday[m].iloc[-1])
+                    stats_to_report[m] = data_to_report
+                cpu = stats_to_report['% CPU use'][:-1]
+                ram = stats_to_report['% RAM used'][:-1]
+                hard_drive = stats_to_report['free hard drive space'][:-1]
+                boot_drive = stats_to_report['% boot drive used'][1]
+                warning = trigger_warning_email(cpu, ram, hard_drive, boot_drive)
+        if warning:
+            return stats_to_report, warning[1]
+        else:
+            return stats_to_report
 
 
 def send_daily_email(computer_stats, process_stats, email_recipients=cfg.daily_status_email_recipients):
@@ -427,7 +438,7 @@ def send_daily_email(computer_stats, process_stats, email_recipients=cfg.daily_s
         computer_stats = computer_stats[0]
 
     if type(computer_stats) is str:
-        email_text += computer_stats
+        email_text += '\n' + computer_stats
     elif type(computer_stats) is dict:
         for f in computer_stats:
             email_text += '\n '
@@ -454,7 +465,7 @@ def send_daily_email(computer_stats, process_stats, email_recipients=cfg.daily_s
     server.sendmail(email['From'], email_recipients, email.as_string())
     server.quit()
 
-    log(today.isoformat() + ':  {0}: Status {1}'.format(cfg.server_name, status))
+    logging.info(today.isoformat() + ':  {0}: Status {1}'.format(cfg.server_name, status))
 
 
 def log(log_contents):
@@ -509,9 +520,9 @@ def run():
                     elif not cfg.processes_to_monitor:
                         send_daily_email(computer_stats=daily_email_contents(), process_stats=False)
         except Exception as e:
-            log(str(e))
+            logging.exception(e)
             script_error_email(e)
-        log("Sleeping for {} minutes \n".format(cfg.minutes_between_stats_check))
+        logging.info("Sleeping for {} minutes \n".format(cfg.minutes_between_stats_check))
         time.sleep(60*(cfg.minutes_between_stats_check))
 
 
