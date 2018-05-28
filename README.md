@@ -18,7 +18,7 @@ To use email notifications, the user should specify a [gmail account](https://gi
 ### Installation and setup
 
 To run ServerReport:  
-1) Clone the code to your server using `git clone https://github.com/sjacks26/ServerReport.git`  
+1) Clone the code to your server using `git clone https://github.com/sjacks26/ServerReport.git`. You should run this command from a directory that your user has write permissions in; otherwise, you can run the code as sudo.    
 2) Rename `config_template.py` to `config.py`.
 3) Modify the parameters in [config.py](https://github.com/sjacks26/ServerReport/blob/master/config_template.py) to match your preferences.  
    * If you are tracking processes, ServerReport uses a grep search to find those processes on the server. You should [include enough information](https://github.com/sjacks26/ServerReport/blob/master/config_template.py#L14) about the command used to run the process you want to monitor so that ServerReport will only find one active process for each item entered in the list of processes to be monitored. If ServerReport finds more than one active process for a process specified in config.py, it will not be able to track process stats. Instead, the process log will say that the process name is ambiguous.   
