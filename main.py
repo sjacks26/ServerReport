@@ -10,7 +10,7 @@ System attributes monitored:
 The script sends this information in an email to specified users.
 
 """
-
+import sys
 import psutil as p
 import datetime
 import subprocess
@@ -146,6 +146,40 @@ def check_process_status(process_list=cfg.processes_to_monitor):
             trigger_process_warning(processes_to_email)
     return processes_info, process_flags
 
+def check_rate_limit():
+    """
+    This function checks the central rate limits collection, returning a list of rate limits aggregated by project, server and date.
+    """
+    try:
+        mongoClient = pymongo.MongoClient(cfg.mongo_account['address'])
+    
+        if cfg.mongo_account['auth']:
+            mongoClient.admin.authenticate(cfg.mongo_account['username'], cfg.mongo_account['password'])
+    
+        mongoDB = mongoClient[cfg.db_name][cfg.col_name]
+    except:
+        return False
+    
+    limits_agg = {}
+    
+    today = datetime.date.today()
+    yesterday = today.replace(day=(today.day - 1)).isoformat()
+    
+    limits = mongoDB.find({'time': {'$gte': yesterday}})
+    
+    for limit in limits:
+        server_name = limit['server_name']
+        project_name = limit['project_name']
+        limit_datetime = datetime.datetime.fromtimestamp(int(limit['timestamp_ms'])/1000).strftime('%Y-%m-%d')
+        
+        if server_name not in limits_agg:
+            limits_agg[server_name] = {}
+        if project_name not in limits_agg[server_name]:
+            limits_agg[server_name][project_name] = 0
+            
+        limits_agg[server_name][project_name] += int(limit['lost_count'])
+    
+    return limits_agg
 
 def trigger_process_warning(broken_processes, email_recipients=cfg.warning_email_recipients):
     """
@@ -166,7 +200,6 @@ def trigger_process_warning(broken_processes, email_recipients=cfg.warning_email
     server.login(cfg.account_to_send_emails, cfg.password_to_send_emails)
     server.sendmail(email['From'], email_recipients, email.as_string())
     server.quit()
-
 
 def log_stats(cpu, ram, hard_drive, boot_drive, processes, log_dir=cfg.stats_archive_dir):
     """
@@ -467,6 +500,40 @@ def send_daily_email(computer_stats, process_stats, email_recipients=cfg.daily_s
 
     logging.info(today.isoformat() + ':  {0}: Status {1}'.format(cfg.server_name, status))
 
+def send_daily_rate_limit_email(rate_limits, email_recipients=cfg.daily_status_email_recipients):
+    """
+    email_recipients should be a list.
+    This assumes that the email will be sent using a gmail account
+    """
+    if not type(email_recipients) is list:
+        raise Exception("Email recipients must be in a list")
+    status = 'Warning'
+    today = datetime.date.today()
+    yesterday = today.replace(day=(today.day - 1)).isoformat()
+
+    email_text = 'A Summary of Rate Limits Report for ' + yesterday + '\n '
+    
+    for server_name in rate_limits:
+        email_text += '\n '
+        email_text += 'Host: ' + server_name + '\n'
+        
+        for project_name in rate_limits[server_name]:
+            email_text += '  - ' + project_name + ': Lost ' + str(rate_limits[server_name][project_name])
+
+
+    email = EmailMessage()
+    email.set_content(email_text)
+    email['Subject'] = 'Rate limits summary'
+    email['From'] = cfg.account_to_send_emails + '@gmail.com'
+    email['To'] = ", ".join(email_recipients)
+
+    server = smtplib.SMTP(cfg.email_server[0], cfg.email_server[1])
+    server.starttls()
+    server.login(cfg.account_to_send_emails, cfg.password_to_send_emails)
+    server.sendmail(email['From'], email_recipients, email.as_string())
+    server.quit()
+
+    logging.info(today.isoformat() + ':  {0}: Status {1}'.format(cfg.server_name, status))
 
 def script_error_email(error, email_recipients=cfg.warning_email_recipients):
     """
@@ -488,7 +555,7 @@ def script_error_email(error, email_recipients=cfg.warning_email_recipients):
     server.quit()
 
 
-def run():
+def run_system():
     monitoring = True
     while monitoring:
         try:
@@ -512,5 +579,41 @@ def run():
         logging.info("Sleeping for {} minutes \n".format(cfg.minutes_between_stats_check))
         time.sleep(60*(cfg.minutes_between_stats_check))
 
+def run_rate_limits():
+    monitoring = True
+    while monitoring:
+        try:
+            rate_limits = check_rate_limit()
+            
+            now = datetime.datetime.now()
+            gap = ((now.hour + (now.minute/60)) - cfg.daily_report_hour) * 60
+            if cfg.daily_email_desired:
+                send_daily_rate_limit_email(rate_limits=rate_limits)
+                
+        except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(exc_type, fname, exc_tb.tb_lineno)
+            logging.exception(e)
+            
+            script_error_email(e)
+        logging.info("Sleeping for {} minutes \n".format(cfg.minutes_between_stats_check))
+        time.sleep(60*(cfg.minutes_between_stats_check))
+    
 
-run()
+if __name__ == '__main__':
+    methods = ['full', 'system', 'rate_limit']
+    
+    method = sys.argv[1]
+    method = method.strip()
+    if method not in methods:
+        print('ERROR: Invalid method. Please include a valid method: ', methods)
+        sys.exit(1)
+    
+    if method == 'full':
+        run_system()
+        run_rate_limits()
+    elif method == 'system':
+        run_system()
+    elif method == 'rate_limit':
+        run_rate_limits()
