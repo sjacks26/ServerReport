@@ -68,10 +68,9 @@ def check_cpu():
 def check_ram():
     """
     This function checks the RAM usage, returning a percentage (rounded to two decimal points) of RAM used.
-    That percentage is calculated by subtracting the available percentage from 100.
     """
     usage = p.virtual_memory()
-    RAM_usage = str(round(100 - usage.percent, 2))
+    RAM_usage = str(round(usage.percent, 2))
     return RAM_usage
 
 
