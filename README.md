@@ -34,4 +34,4 @@ To run ServerReport:
      
 ### Requirements
 
-ServerReport requires Python3, [psutil](https://pypi.org/project/psutil/), and any version of [pymongo](https://api.mongodb.com/python/current/).
+ServerReport requires Python3, [psutil](https://pypi.org/project/psutil/), [pandas](https://pandas.pydata.org/), and any version of [pymongo](https://api.mongodb.com/python/current/).

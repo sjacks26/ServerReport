@@ -431,7 +431,7 @@ def daily_email_contents(log_dir=cfg.stats_archive_dir):
                     if m in averaged_metrics:
                         size = ''
                         data_points = log_from_yesterday[m]
-                        if not type(data_points[0]) is np.float64:
+                        if not type(data_points.iloc[0]) is np.float64:
                             size = data_points.str.slice(start=-1)[0]
                             data_points = data_points.str.slice(stop=-1)
                             data_points = pd.to_numeric(data_points)
