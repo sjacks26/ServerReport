@@ -22,6 +22,7 @@ import smtplib
 import numpy as np
 import pymongo
 import logging
+import traceback
 
 import config as cfg
 
@@ -507,8 +508,9 @@ def run():
                     elif not cfg.processes_to_monitor:
                         send_daily_email(computer_stats=daily_email_contents(), process_stats=False)
         except Exception as e:
+            logging.info(datetime.datetime.now().isoformat())
             logging.exception(e)
-            script_error_email(e)
+            script_error_email(traceback.format_exc())
         logging.info("Sleeping for {} minutes \n".format(cfg.minutes_between_stats_check))
         time.sleep(60*(cfg.minutes_between_stats_check))
 
