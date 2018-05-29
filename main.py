@@ -23,7 +23,7 @@ import numpy as np
 import pymongo
 import logging
 
-import config as cfg
+import config_template as cfg
 
 logging.basicConfig(filename=cfg.script_log_file,filemode='a+',level=logging.INFO)
 
