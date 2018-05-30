@@ -29,8 +29,8 @@ To run ServerReport:
    * Specify whether you want ServerReport to [make sure MongoDB is running](https://github.com/sjacks26/ServerReport/blob/master/config_template.py#L15).
    * You may want to keep detailed information about process statistics to monitor each process's computational load over time. ServerReport creates a summary log file with the daily average for each process's load, but you can also tell it to [keep a detailed log](https://github.com/sjacks26/ServerReport/blob/master/config_template.py#L16) with the information from each time it checks those statistics.
  4) Run ServerReport:
-     * You can run ServerReport with `python main.py`. This will keep ServerReport in the foreground. If you want to see output from ServerReport, make sure you [specify that in the config file](https://github.com/sjacks26/ServerReport/blob/master/config_template.py#L10).
-     * To run ServerReport in the background, use `python main.py &`. ServerReport keeps a log of stderr and stdout, so you don't need to tell ServerReport what to do with those two kinds of output in the command.
+     * You can run ServerReport with `python ServerReport.py`. This will keep ServerReport in the foreground. If you want to see output from ServerReport, make sure you [specify that in the config file](https://github.com/sjacks26/ServerReport/blob/master/config_template.py#L10).
+     * To run ServerReport in the background, use `python ServerReport.py &`. ServerReport keeps a log of stderr and stdout, so you don't need to tell ServerReport what to do with those two kinds of output in the command.
      
 ### Requirements
 
