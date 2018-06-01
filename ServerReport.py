@@ -11,10 +11,15 @@ The script sends this information in an email to specified users.
 
 """
 
+import matplotlib
+matplotlib.use('Agg')
 import psutil as p
 import datetime
 import subprocess
 from email.message import EmailMessage
+from email.mime.image import MIMEImage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 import os
 import pandas as pd
 import time
@@ -23,6 +28,7 @@ import numpy as np
 import pymongo
 import logging
 import traceback
+import matplotlib.pyplot as plt
 
 import config as cfg
 
@@ -377,6 +383,8 @@ def daily_email_contents(log_dir=cfg.stats_archive_dir):
     today = datetime.date.today()
     yesterday = today.replace(day=(today.day-1))
     log = log_dir + '/stats_log.csv'
+    plots_dir = log_dir + 'plots/' + yesterday.isoformat()
+    os.makedirs(plots_dir,exist_ok=True)
     stats_to_report = {}
     if not os.path.isfile(log):
         stats_to_report = '**No stats log file!**'
@@ -386,30 +394,41 @@ def daily_email_contents(log_dir=cfg.stats_archive_dir):
         with open(log, 'r') as f:
             log_contents = pd.read_csv(f,parse_dates=[0])
             log_contents['date'] = [datetime.datetime.date(d) for d in log_contents['time']]
-            log_from_yesterday = log_contents[log_contents['date'] == yesterday]
+            log_from_yesterday = log_contents[log_contents['date'] == yesterday].copy()
+            log_from_yesterday['time'] = pd.to_datetime(log_from_yesterday['time'])
             if not log_from_yesterday.shape[0] > 0:
                 stats_to_report = '**No stats information for {}**'.format(yesterday)
                 logging.warning(stats_to_report)
                 warning = (None, 'Warning')
             elif log_from_yesterday.shape[0] > 0:
-                metrics = list(log_from_yesterday.columns)
+                metrics = list(log_from_yesterday.columns[1:-1])
                 averaged_metrics = ['% CPU use','% RAM used']
-                for m in metrics[1:]:
+                plot_metrics = ['% CPU use','% RAM used']
+                for m in metrics:
+                    data_points = log_from_yesterday[['time', m]].copy()
                     if m in averaged_metrics:
-                        size = ''
-                        data_points = log_from_yesterday[m]
-                        if not type(data_points.iloc[0]) is np.float64:
-                            size = data_points.str.slice(start=-1)[0]
-                            data_points = data_points.str.slice(stop=-1)
-                            data_points = pd.to_numeric(data_points)
-                        data_to_report = str(round(np.mean(data_points), 2))
-                        if '%' in m:
-                            data_to_report = data_to_report + '%'
-                        if size:
-                            data_to_report = data_to_report + size
+                        data_to_report = str(round(np.mean(data_points[m]), 2))
                     elif m not in averaged_metrics:
-                        data_to_report = str(log_from_yesterday[m].iloc[-1])
+                        data_to_report = str(data_points[m].iloc[-1])
+                    if '%' in m:
+                        data_to_report = data_to_report + '%'
+                    if m in plot_metrics:
+                        plot = plt.figure(figsize=(5, 4))
+                        plot1 = plot.subplots()
+                        plot1.plot_date(data_points['time'].dt.time, data_points[m], fmt='-')
+                        plot.autofmt_xdate()
+                        if '%' in m:
+                            plot1.set_ylim(0, 100)
+                        plot1.set_xlabel('Time of day')
+                        plot1.set_title(m)
+                        fig_name = m.replace('%', 'Percent')
+                        fig_name = fig_name.replace(' ', '_') + '.png'
+                        fig_name = os.path.join(plots_dir, fig_name)
+                        plot.savefig(fig_name)
+
                     stats_to_report[m] = data_to_report
+
+
                 cpu = stats_to_report['% CPU use'][:-1]
                 ram = stats_to_report['% RAM used'][:-1]
                 hard_drive = stats_to_report['free hard drive space'][:-1]
@@ -453,18 +472,41 @@ def send_daily_email(computer_stats, process_stats, email_recipients=cfg.daily_s
         else:
             email_text += process_stats
 
-    email = EmailMessage()
-    email.set_content(email_text)
-    email['Subject'] = '{0}: Status {1}'.format(cfg.server_name, status)
-    email['From'] = cfg.account_to_send_emails + '@gmail.com'
-    email['To'] = ", ".join(email_recipients)
+    if cfg.charts_in_status_email:
+        plots_dir = cfg.stats_archive_dir + 'plots/' + yesterday
+        plots = os.listdir(plots_dir)
 
+    # Long and arduous process to embed images in the email.
+    msg = MIMEMultipart('related')
+    email_alternative = MIMEMultipart('alternative')
+    msg.attach(email_alternative)
+    msgText = MIMEText('This message is meant to contain an image.')
+    email_alternative.attach(msgText)
+
+    msg['Subject'] = '{0}: Status {1}'.format(cfg.server_name, status)
+    msg['From'] = cfg.account_to_send_emails + '@gmail.com'
+    msg['To'] = ", ".join(email_recipients)
+    if plots:
+        i = 0
+        for plot in plots:
+            i += 1
+            with open(os.path.join(plots_dir,plot), 'rb') as fp:
+                img = MIMEImage(fp.read())
+            msgText = MIMEText('<br><img src="cid:image{}"><br>'.format(i), 'html')
+            email_alternative.attach(msgText)
+            img.add_header('Content-ID', '<image{}>'.format(i))
+            msg.attach(img)
+
+    msg.attach(MIMEText(email_text))
     server = smtplib.SMTP(cfg.email_server[0], cfg.email_server[1])
     server.starttls()
     server.login(cfg.account_to_send_emails, cfg.password_to_send_emails)
-    server.sendmail(email['From'], email_recipients, email.as_string())
+    server.sendmail(msg['From'], email_recipients, msg.as_string())
     server.quit()
 
+    if plots:
+        for plot in plots:
+            os.remove(plot)
     logging.info(today.isoformat() + ':  {0}: Status {1}'.format(cfg.server_name, status))
 
 
