@@ -329,7 +329,7 @@ def prepare_process_summary(processes=cfg.processes_to_monitor):
      information. It writes that summary line to a summary log file, then deletes the previous day's log.
     """
     today = datetime.date.today()
-    yesterday = today.replace(day=(today.day - 1)).isoformat()
+    yesterday = (today - datetime.timedelta(days=1)).isoformat()
     process_dir = cfg.stats_archive_dir + 'processes/'
     process_report_info = {}
     for process in processes:
@@ -381,7 +381,7 @@ def daily_email_contents(log_dir=cfg.stats_archive_dir):
     This function compiles the information to be included in the daily email
     """
     today = datetime.date.today()
-    yesterday = today.replace(day=(today.day-1))
+    yesterday = today - datetime.timedelta(days=1)
     log = log_dir + '/stats_log.csv'
     plots_dir = log_dir + 'plots/' + yesterday.isoformat()
     os.makedirs(plots_dir,exist_ok=True)
@@ -449,7 +449,7 @@ def send_daily_email(computer_stats, process_stats, email_recipients=cfg.daily_s
         raise Exception("Email recipients must be in a list")
     status = 'OK'
     today = datetime.date.today()
-    yesterday = today.replace(day=(today.day - 1)).isoformat()
+    yesterday = (today - datetime.timedelta(days=1)).isoformat()
 
     email_text = cfg.server_name + ' status report for ' + yesterday + '\n '
     if type(computer_stats) is tuple:
