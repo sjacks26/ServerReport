@@ -1,5 +1,5 @@
 """
-This file contains parameters used by main.py
+This file contains parameters used by ServerReport.py
 """
 
 server_name = 'SERVER NAME'
