@@ -383,7 +383,7 @@ def daily_email_contents(log_dir=cfg.stats_archive_dir):
     today = datetime.date.today()
     yesterday = today - datetime.timedelta(days=1)
     log = log_dir + '/stats_log.csv'
-    plots_dir = log_dir + 'plots/' + yesterday.isoformat()
+    plots_dir = log_dir + 'plots/'
     os.makedirs(plots_dir,exist_ok=True)
     stats_to_report = {}
     if not os.path.isfile(log):
@@ -404,6 +404,10 @@ def daily_email_contents(log_dir=cfg.stats_archive_dir):
                 metrics = list(log_from_yesterday.columns[1:-1])
                 averaged_metrics = ['% CPU use','% RAM used']
                 plot_metrics = ['% CPU use','% RAM used']
+                plot = plt.figure(figsize=(5, 4))
+                plot1 = plot.add_subplot(111)
+                plot_colors = ['c','m','y','k']
+                plot_num = 0
                 for m in metrics:
                     data_points = log_from_yesterday[['time', m]].copy()
                     if m in averaged_metrics:
@@ -413,22 +417,21 @@ def daily_email_contents(log_dir=cfg.stats_archive_dir):
                     if '%' in m:
                         data_to_report = data_to_report + '%'
                     if m in plot_metrics:
-                        plot = plt.figure(figsize=(5, 4))
-                        plot1 = plot.subplots()
-                        plot1.plot_date(data_points['time'].dt.time, data_points[m], fmt='-')
+                        line_color = plot_colors[plot_num]
+                        plot_num += 1
+                        #plot1 = plot.add_subplot(len(plot_metrics),1,plot_num)
+                        plot1.plot_date(data_points['time'].dt.time, data_points[m], fmt='-',color=line_color, label=m)
                         plot.autofmt_xdate()
                         if '%' in m:
                             plot1.set_ylim(0, 100)
                         plot1.set_xlabel('Time of day')
                         plot1.set_title(m)
-                        fig_name = m.replace('%', 'Percent')
-                        fig_name = fig_name.replace(' ', '_') + '.png'
-                        fig_name = os.path.join(plots_dir, fig_name)
-                        plot.savefig(fig_name)
 
                     stats_to_report[m] = data_to_report
 
-
+                plot.legend()
+                fig_name = os.path.join(plots_dir, yesterday.isoformat())
+                plot.savefig(fig_name)
                 cpu = stats_to_report['% CPU use'][:-1]
                 ram = stats_to_report['% RAM used'][:-1]
                 hard_drive = stats_to_report['free hard drive space'][:-1]
@@ -473,40 +476,34 @@ def send_daily_email(computer_stats, process_stats, email_recipients=cfg.daily_s
             email_text += process_stats
 
     if cfg.charts_in_status_email:
-        plots_dir = cfg.stats_archive_dir + 'plots/' + yesterday
-        plots = os.listdir(plots_dir)
+        plot = cfg.stats_archive_dir + 'plots/' + yesterday + '.png'
 
     # Long and arduous process to embed images in the email.
     msg = MIMEMultipart('related')
-    email_alternative = MIMEMultipart('alternative')
-    msg.attach(email_alternative)
-    msgText = MIMEText('This message is meant to contain an image.')
-    email_alternative.attach(msgText)
-
     msg['Subject'] = '{0}: Status {1}'.format(cfg.server_name, status)
     msg['From'] = cfg.account_to_send_emails + '@gmail.com'
     msg['To'] = ", ".join(email_recipients)
-    if plots:
-        i = 0
-        for plot in plots:
-            i += 1
-            with open(os.path.join(plots_dir,plot), 'rb') as fp:
-                img = MIMEImage(fp.read())
-            msgText = MIMEText('<br><img src="cid:image{}"><br>'.format(i), 'html')
-            email_alternative.attach(msgText)
-            img.add_header('Content-ID', '<image{}>'.format(i))
-            msg.attach(img)
-
     msg.attach(MIMEText(email_text))
+
+    email_alternative = MIMEMultipart('alternative')
+    msg.attach(email_alternative)
+    msgText = MIMEText('\n\n\nThis message is meant to contain an image.\n')
+    email_alternative.attach(msgText)
+
+    if plot:
+        with open(plot, 'rb') as fp:
+            img = MIMEImage(fp.read())
+        img.add_header('Content-ID', '<image{}>'.format(1))
+        email_alternative.attach(img)
+
     server = smtplib.SMTP(cfg.email_server[0], cfg.email_server[1])
     server.starttls()
     server.login(cfg.account_to_send_emails, cfg.password_to_send_emails)
     server.sendmail(msg['From'], email_recipients, msg.as_string())
     server.quit()
 
-    if plots:
-        for plot in plots:
-            os.remove(plot)
+    if plot:
+        os.remove(plot)
     logging.info(today.isoformat() + ':  {0}: Status {1}'.format(cfg.server_name, status))
 
 
