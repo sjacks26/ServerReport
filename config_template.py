@@ -1,10 +1,11 @@
 """
-This file contains parameters used by main.py
+This file contains parameters used by ServerReport.py
 """
 
 server_name = 'SERVER NAME'
 minutes_between_stats_check = 15
 daily_email_desired = True
+charts_in_status_email = True
 daily_report_hour = 2
 script_log_file = './script.log'
 print_output_to_terminal = False

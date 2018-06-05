@@ -11,10 +11,15 @@ The script sends this information in an email to specified users.
 
 """
 
+import matplotlib
+matplotlib.use('Agg')
 import psutil as p
 import datetime
 import subprocess
 from email.message import EmailMessage
+from email.mime.image import MIMEImage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 import os
 import pandas as pd
 import time
@@ -23,6 +28,7 @@ import numpy as np
 import pymongo
 import logging
 import traceback
+import matplotlib.pyplot as plt
 
 import config as cfg
 
@@ -323,7 +329,7 @@ def prepare_process_summary(processes=cfg.processes_to_monitor):
      information. It writes that summary line to a summary log file, then deletes the previous day's log.
     """
     today = datetime.date.today()
-    yesterday = today.replace(day=(today.day - 1)).isoformat()
+    yesterday = (today - datetime.timedelta(days=1)).isoformat()
     process_dir = cfg.stats_archive_dir + 'processes/'
     process_report_info = {}
     for process in processes:
@@ -375,8 +381,10 @@ def daily_email_contents(log_dir=cfg.stats_archive_dir):
     This function compiles the information to be included in the daily email
     """
     today = datetime.date.today()
-    yesterday = today.replace(day=(today.day-1))
+    yesterday = today - datetime.timedelta(days=1)
     log = log_dir + '/stats_log.csv'
+    plots_dir = log_dir + 'plots/'
+    os.makedirs(plots_dir,exist_ok=True)
     stats_to_report = {}
     if not os.path.isfile(log):
         stats_to_report = '**No stats log file!**'
@@ -386,30 +394,44 @@ def daily_email_contents(log_dir=cfg.stats_archive_dir):
         with open(log, 'r') as f:
             log_contents = pd.read_csv(f,parse_dates=[0])
             log_contents['date'] = [datetime.datetime.date(d) for d in log_contents['time']]
-            log_from_yesterday = log_contents[log_contents['date'] == yesterday]
+            log_from_yesterday = log_contents[log_contents['date'] == yesterday].copy()
+            log_from_yesterday['time'] = pd.to_datetime(log_from_yesterday['time'])
             if not log_from_yesterday.shape[0] > 0:
                 stats_to_report = '**No stats information for {}**'.format(yesterday)
                 logging.warning(stats_to_report)
                 warning = (None, 'Warning')
             elif log_from_yesterday.shape[0] > 0:
-                metrics = list(log_from_yesterday.columns)
+                metrics = list(log_from_yesterday.columns[1:-1])
                 averaged_metrics = ['% CPU use','% RAM used']
-                for m in metrics[1:]:
+                plot_metrics = ['% CPU use','% RAM used']
+                plot = plt.figure(figsize=(5, 4))
+                plot1 = plot.add_subplot(111)
+                plot_colors = ['c','m','y','k']
+                plot_num = 0
+                for m in metrics:
+                    data_points = log_from_yesterday[['time', m]].copy()
                     if m in averaged_metrics:
-                        size = ''
-                        data_points = log_from_yesterday[m]
-                        if not type(data_points.iloc[0]) is np.float64:
-                            size = data_points.str.slice(start=-1)[0]
-                            data_points = data_points.str.slice(stop=-1)
-                            data_points = pd.to_numeric(data_points)
-                        data_to_report = str(round(np.mean(data_points), 2))
-                        if '%' in m:
-                            data_to_report = data_to_report + '%'
-                        if size:
-                            data_to_report = data_to_report + size
+                        data_to_report = str(round(np.mean(data_points[m]), 2))
                     elif m not in averaged_metrics:
-                        data_to_report = str(log_from_yesterday[m].iloc[-1])
+                        data_to_report = str(data_points[m].iloc[-1])
+                    if '%' in m:
+                        data_to_report = data_to_report + '%'
+                    if m in plot_metrics:
+                        line_color = plot_colors[plot_num]
+                        plot_num += 1
+                        #plot1 = plot.add_subplot(len(plot_metrics),1,plot_num)
+                        plot1.plot_date(data_points['time'].dt.time, data_points[m], fmt='-',color=line_color, label=m)
+                        plot.autofmt_xdate()
+                        if '%' in m:
+                            plot1.set_ylim(0, 105)
+                        plot1.set_xlabel('Time of day')
+                        plot1.set_title(m)
+
                     stats_to_report[m] = data_to_report
+
+                plot.legend()
+                fig_name = os.path.join(plots_dir, yesterday.isoformat())
+                plot.savefig(fig_name)
                 cpu = stats_to_report['% CPU use'][:-1]
                 ram = stats_to_report['% RAM used'][:-1]
                 hard_drive = stats_to_report['free hard drive space'][:-1]
@@ -430,7 +452,7 @@ def send_daily_email(computer_stats, process_stats, email_recipients=cfg.daily_s
         raise Exception("Email recipients must be in a list")
     status = 'OK'
     today = datetime.date.today()
-    yesterday = today.replace(day=(today.day - 1)).isoformat()
+    yesterday = (today - datetime.timedelta(days=1)).isoformat()
 
     email_text = cfg.server_name + ' status report for ' + yesterday + '\n '
     if type(computer_stats) is tuple:
@@ -453,18 +475,35 @@ def send_daily_email(computer_stats, process_stats, email_recipients=cfg.daily_s
         else:
             email_text += process_stats
 
-    email = EmailMessage()
-    email.set_content(email_text)
-    email['Subject'] = '{0}: Status {1}'.format(cfg.server_name, status)
-    email['From'] = cfg.account_to_send_emails + '@gmail.com'
-    email['To'] = ", ".join(email_recipients)
+    if cfg.charts_in_status_email:
+        plot = cfg.stats_archive_dir + 'plots/' + yesterday + '.png'
+
+    # Long and arduous process to embed images in the email.
+    msg = MIMEMultipart('related')
+    msg['Subject'] = '{0}: Status {1}'.format(cfg.server_name, status)
+    msg['From'] = cfg.account_to_send_emails + '@gmail.com'
+    msg['To'] = ", ".join(email_recipients)
+    msg.attach(MIMEText(email_text))
+
+    email_alternative = MIMEMultipart('alternative')
+    msg.attach(email_alternative)
+    msgText = MIMEText('\n\n\nThis message is meant to contain an image.\n')
+    email_alternative.attach(msgText)
+
+    if plot:
+        with open(plot, 'rb') as fp:
+            img = MIMEImage(fp.read())
+        img.add_header('Content-ID', '<image{}>'.format(1))
+        email_alternative.attach(img)
 
     server = smtplib.SMTP(cfg.email_server[0], cfg.email_server[1])
     server.starttls()
     server.login(cfg.account_to_send_emails, cfg.password_to_send_emails)
-    server.sendmail(email['From'], email_recipients, email.as_string())
+    server.sendmail(msg['From'], email_recipients, msg.as_string())
     server.quit()
 
+    if plot:
+        os.remove(plot)
     logging.info(today.isoformat() + ':  {0}: Status {1}'.format(cfg.server_name, status))
 
 
