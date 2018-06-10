@@ -382,6 +382,7 @@ def daily_email_contents(log_dir=cfg.stats_archive_dir):
     """
     today = datetime.date.today()
     yesterday = today - datetime.timedelta(days=1)
+    seven_days_ago = today - datetime.timedelta(days=7)
     log = log_dir + '/stats_log.csv'
     plots_dir = log_dir + 'plots/'
     os.makedirs(plots_dir,exist_ok=True)
@@ -394,22 +395,23 @@ def daily_email_contents(log_dir=cfg.stats_archive_dir):
         with open(log, 'r') as f:
             log_contents = pd.read_csv(f,parse_dates=[0])
             log_contents['date'] = [datetime.datetime.date(d) for d in log_contents['time']]
-            log_from_yesterday = log_contents[log_contents['date'] == yesterday].copy()
-            log_from_yesterday['time'] = pd.to_datetime(log_from_yesterday['time'])
-            if not log_from_yesterday.shape[0] > 0:
-                stats_to_report = '**No stats information for {}**'.format(yesterday)
+            log_to_plot = log_contents[log_contents['date'] >= seven_days_ago].copy()
+            log_to_plot['time'] = pd.to_datetime(log_to_plot['time'])
+            if not log_to_plot.shape[0] > 0:
+                stats_to_report = '**No stats information since {}**'.format(seven_days_ago)
                 logging.warning(stats_to_report)
                 warning = (None, 'Warning')
-            elif log_from_yesterday.shape[0] > 0:
-                metrics = list(log_from_yesterday.columns[1:-1])
+            elif log_to_plot.shape[0] > 0:
+                metrics = list(log_to_plot.columns[1:-1])
                 averaged_metrics = ['% CPU use','% RAM used']
                 plot_metrics = ['% CPU use','% RAM used']
-                plot = plt.figure(figsize=(5, 4))
+                plot = plt.figure(figsize=(10, 4))
                 plot1 = plot.add_subplot(111)
                 plot_colors = ['c','m','y','k']
+                plot_line_types = ['solid', 'dashed']
                 plot_num = 0
                 for m in metrics:
-                    data_points = log_from_yesterday[['time', m]].copy()
+                    data_points = log_to_plot[['time', m]].copy()
                     if m in averaged_metrics:
                         data_to_report = str(round(np.mean(data_points[m]), 2))
                     elif m not in averaged_metrics:
@@ -418,14 +420,15 @@ def daily_email_contents(log_dir=cfg.stats_archive_dir):
                         data_to_report = data_to_report + '%'
                     if m in plot_metrics:
                         line_color = plot_colors[plot_num]
+                        line_type = plot_line_types[plot_num]
                         plot_num += 1
                         #plot1 = plot.add_subplot(len(plot_metrics),1,plot_num)
-                        plot1.plot_date(data_points['time'].dt.time, data_points[m], fmt='-',color=line_color, label=m)
+                        plot1.plot_date(data_points['time'], data_points[m], fmt='-', color=line_color, ls=line_type, label=m)
                         plot.autofmt_xdate()
                         if '%' in m:
-                            plot1.set_ylim(0, 105)
+                            plot1.set_ylim(0, 100)
                         plot1.set_xlabel('Time of day')
-                        plot1.set_title(m)
+                        plot1.set_title(today.isoformat())
 
                     stats_to_report[m] = data_to_report
 
@@ -494,6 +497,7 @@ def send_daily_email(computer_stats, process_stats, email_recipients=cfg.daily_s
         with open(plot, 'rb') as fp:
             img = MIMEImage(fp.read())
         img.add_header('Content-ID', '<image{}>'.format(1))
+        img.add_header('Content-Disposition', 'attachment', filename=cfg.server_name)
         email_alternative.attach(img)
 
     server = smtplib.SMTP(cfg.email_server[0], cfg.email_server[1])
