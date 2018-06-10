@@ -21,8 +21,13 @@ import config as cfg
 
 def build_process_list():
     processes_dir = os.path.join(cfg.stats_archive_dir, 'processes')
-    processes = os.listdir(processes_dir)
-    processes = [f for f in processes if os.path.isdir(os.path.join(processes_dir, f))]
+    processes1 = os.listdir(processes_dir)
+    processes = {}
+    process_count = 0
+    for f in processes1:
+        if os.path.isdir(os.path.join(processes_dir, f)):
+            process_count += 1
+            processes[process_count] = f
     return processes
 
 
@@ -48,16 +53,23 @@ def ask_for_info():
             processes = build_process_list()
             print("Found {} processes that I can generate plots for.".format(len(processes)))
             for f in processes:
-                print(f)
+                print('{0}: {1}'.format(f, processes[f]))
             choose_processes_or_computer = False
             while choose_processes_or_computer == False:
-                processes_or_computer = input("Which of these processes do you want plots for? Or do you want plots for all?\n")
+                processes_or_computer = input("Which of these processes do you want plots for? Or do you want plots for all?\nIf you want only some of the processes,\n\t use the number of that process as shown above\n")
                 if "all" in processes_or_computer.split():
-                    processes_or_computer = processes
+                    processes_or_computer = list(processes.values())
                     choose_processes_or_computer = True
-                elif "," in processes_or_computer:
-                    processes_or_computer = [f.strip() for f in processes_or_computer.split(",")]
-                    if np.setdiff1d(processes_or_computer, processes).size > 0:
+                elif type(processes_or_computer) is str:
+                    if processes_or_computer.isdigit():
+                        if "," in processes_or_computer:
+                            processes_or_computer = [f.strip() for f in processes_or_computer.split(",")]
+                        elif not "," in processes_or_computer:
+                            processes_or_computer = [f for f in processes_or_computer]
+                        processes_or_computer = [processes[int(f)] for f in processes_or_computer]
+                    elif not processes_or_computer.isdigit():
+                        processes_or_computer = [f.strip() for f in processes_or_computer.split(",")]
+                    if np.setdiff1d(processes_or_computer, list(processes.values())).size > 0:
                         print("One of the processes you asked for isn't valid. Try again.")
                     else:
                         choose_processes_or_computer = True
