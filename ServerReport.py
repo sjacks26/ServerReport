@@ -532,6 +532,7 @@ def script_error_email(error, email_recipients=cfg.warning_email_recipients):
 
 
 def run():
+    script_error = False
     monitoring = True
     while monitoring:
         try:
@@ -549,10 +550,13 @@ def run():
                         send_daily_email(computer_stats=daily_email_contents(), process_stats=prepare_process_summary())
                     elif not cfg.processes_to_monitor:
                         send_daily_email(computer_stats=daily_email_contents(), process_stats=False)
+            script_error = False
         except Exception as e:
             logging.info(datetime.datetime.now().isoformat())
             logging.exception(e)
-            script_error_email(traceback.format_exc())
+            if not script_error:
+                script_error_email(traceback.format_exc())
+            script_error = True
         logging.info("Sleeping for {} minutes \n".format(cfg.minutes_between_stats_check))
         time.sleep(60*(cfg.minutes_between_stats_check))
 
