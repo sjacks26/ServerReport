@@ -366,7 +366,11 @@ def prepare_process_summary(processes=cfg.processes_to_monitor):
                 f = open(summary_log, 'w')
                 f.write(','.join(summary_header))
                 f.write('\n')
-            write_info = [yesterday, log_contents['status'].iloc[-1], log_contents['create_time'].iloc[-1], stats_to_report['memory_info'], stats_to_report['memory_percent'], stats_to_report['cpu_percent']]
+
+            create_time = log_contents['create_time'].dropna().unique()
+            if len(create_time) == 0:
+                create_time = ['None found']
+            write_info = [yesterday, log_contents['status'].iloc[-1], create_time[0], stats_to_report['memory_info'], stats_to_report['memory_percent'], stats_to_report['cpu_percent']]
             write_info = ','.join(write_info)
             f.write(write_info)
             if cfg.delete_daily_process_stats_after_summary:
@@ -532,6 +536,7 @@ def script_error_email(error, email_recipients=cfg.warning_email_recipients):
 
 
 def run():
+    script_error = False
     monitoring = True
     while monitoring:
         try:
@@ -549,10 +554,13 @@ def run():
                         send_daily_email(computer_stats=daily_email_contents(), process_stats=prepare_process_summary())
                     elif not cfg.processes_to_monitor:
                         send_daily_email(computer_stats=daily_email_contents(), process_stats=False)
+            script_error = False
         except Exception as e:
             logging.info(datetime.datetime.now().isoformat())
             logging.exception(e)
-            script_error_email(traceback.format_exc())
+            if not script_error:
+                script_error_email(traceback.format_exc())
+            script_error = True
         logging.info("Sleeping for {} minutes \n".format(cfg.minutes_between_stats_check))
         time.sleep(60*(cfg.minutes_between_stats_check))
 
