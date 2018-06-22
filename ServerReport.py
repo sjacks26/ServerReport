@@ -128,7 +128,7 @@ def check_process_status(process_list=cfg.processes_to_monitor):
         process_pids = [int(x[1]) for x in process_status]
         if process_status:
             if len(process_pids) > 1:
-                process_info = 'Ambiguous process name: {}'.format(process)
+                process_info = ['Ambiguous process name: {}'.format(process),'','','','','']
             else:
                 pid = process_pids[0]
                 info = p.Process(pid).as_dict(attrs=['create_time','memory_info','memory_percent','username','cpu_percent'])
@@ -198,8 +198,8 @@ def log_stats(cpu, ram, hard_drive, boot_drive, processes, log_dir=cfg.stats_arc
     f.write(write_info)
     f.close()
 
-    write_info = ''
     for process in processes:
+        write_info = ''
         process_log_dir = log_dir + '/processes/' + process
         os.makedirs(process_log_dir, exist_ok=True)
         log_file = process_log_dir + '/' + date + '.csv'
