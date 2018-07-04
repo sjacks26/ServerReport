@@ -370,7 +370,10 @@ def prepare_process_summary(processes=cfg.processes_to_monitor):
             create_time = log_contents['create_time'].dropna().unique()
             if len(create_time) == 0:
                 create_time = ['None found']
-            write_info = [yesterday, log_contents['status'].iloc[-1], create_time[0], stats_to_report['memory_info'], stats_to_report['memory_percent'], stats_to_report['cpu_percent']]
+            status = log_contents['status'].iloc[-1]
+            if np.isnan(status):
+                status = 'nan'
+            write_info = [yesterday, status, create_time[0], stats_to_report['memory_info'], stats_to_report['memory_percent'], stats_to_report['cpu_percent']]
             write_info = ','.join(write_info)
             f.write(write_info)
             if cfg.delete_daily_process_stats_after_summary:
