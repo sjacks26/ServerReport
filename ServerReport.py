@@ -118,6 +118,8 @@ def check_process_status(process_list=cfg.processes_to_monitor):
         process_list = [process_list]
     processes_info = {}
     broken_processes = []
+    broken_processes_to_email = []
+    ambiguous_processes_to_email = []
     processes_to_email = []
     for process in process_list:
         time = str(datetime.datetime.now().replace(microsecond=0).isoformat().split('T')[1])
@@ -128,6 +130,10 @@ def check_process_status(process_list=cfg.processes_to_monitor):
         process_pids = [int(x[1]) for x in process_status]
         if process_status:
             if len(process_pids) > 1:
+                if process_flags[process] == 0:
+                    ambiguous_processes_to_email.append(process)
+                    process_flags[process] = 1
+                broken_processes.append(process)
                 process_info = ['Ambiguous process name: {}'.format(process),'','','','','']
             else:
                 pid = process_pids[0]
@@ -141,29 +147,34 @@ def check_process_status(process_list=cfg.processes_to_monitor):
                 process_flags[process] = 0
         else:
             if process_flags[process] == 0:
-                processes_to_email.append(process)
+                broken_processes_to_email.append(process)
                 process_flags[process] = 1
             broken_processes.append(process)
             process_info = [time, 'Process not running','','','','','']
         processes_info[process] = process_info
     if broken_processes:
-        logging.critical('BROKEN PROCESS(ES): {}'.format(broken_processes))
-        if processes_to_email:
-            trigger_process_warning(processes_to_email)
+        logging.critical('PROBLEM WITH PROCESS(ES): {}'.format(broken_processes))
+        if (broken_processes_to_email or ambiguous_processes_to_email):
+            trigger_process_warning(broken_processes_to_email, ambiguous_processes_to_email)
     return processes_info, process_flags
 
 
-def trigger_process_warning(broken_processes, email_recipients=cfg.warning_email_recipients):
+def trigger_process_warning(broken_processes, ambiguous_processes, email_recipients=cfg.warning_email_recipients):
     """
     This function immediately sends a warning email if a process in process_list=cfg.processes_to_monitor is not running.
     """
     if not type(email_recipients) is list:
         raise Exception("Email recipients must be in a list")
     email = EmailMessage()
-    email_text = "PROCESSES NOT RUNNING \n\n" + '\n'.join(broken_processes)
+    email_text = ''
+    if len(broken_processes) > 0:
+        email_text += "PROCESSES NOT RUNNING \n\n" + '\n\t'.join(broken_processes) + '\n\n'
+    if len(ambiguous_processes) > 0:
+        email_text += "AMBIGUOUS PROCESSES, UNABLE TO LOG STATS \n\n" + '\n\t'.join(ambiguous_processes) + '\n\n'
+
     email.set_content(email_text)
     time = str(datetime.datetime.now().replace(microsecond=0).isoformat().split('T')[1])
-    email['Subject'] = "{0}: Critical - broken process(es)".format(cfg.server_name, time)
+    email['Subject'] = "{0}: Critical - error in process(es)".format(cfg.server_name, time)
     email['From'] = cfg.account_to_send_emails + '@gmail.com'
     email['To'] = ", ".join(email_recipients)
 
@@ -370,7 +381,10 @@ def prepare_process_summary(processes=cfg.processes_to_monitor):
             create_time = log_contents['create_time'].dropna().unique()
             if len(create_time) == 0:
                 create_time = ['None found']
-            write_info = [yesterday, log_contents['status'].iloc[-1], create_time[0], stats_to_report['memory_info'], stats_to_report['memory_percent'], stats_to_report['cpu_percent']]
+            status = log_contents['status'].iloc[-1]
+            if np.isnan(status):
+                status = 'nan'
+            write_info = [yesterday, status, create_time[0], stats_to_report['memory_info'], stats_to_report['memory_percent'], stats_to_report['cpu_percent']]
             write_info = ','.join(write_info)
             f.write(write_info)
             if cfg.delete_daily_process_stats_after_summary:
