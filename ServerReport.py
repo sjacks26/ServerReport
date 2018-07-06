@@ -382,7 +382,7 @@ def prepare_process_summary(processes=cfg.processes_to_monitor):
             if len(create_time) == 0:
                 create_time = ['None found']
             status = log_contents['status'].iloc[-1]
-            if np.isnan(status):
+            if pd.isnull(status):
                 status = 'nan'
             write_info = [yesterday, status, create_time[0], stats_to_report['memory_info'], stats_to_report['memory_percent'], stats_to_report['cpu_percent']]
             write_info = ','.join(write_info)
