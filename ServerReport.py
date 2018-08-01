@@ -444,7 +444,7 @@ def daily_email_contents(log_dir=cfg.stats_archive_dir):
                         plot1.plot_date(data_points['time'], data_points[m], fmt='-', color=line_color, ls=line_type, label=m)
                         plot.autofmt_xdate()
                         if '%' in m:
-                            plot1.set_ylim(0, 100)
+                            plot1.set_ylim(0, 105)
                         plot1.set_xlabel('Time of day')
                         plot1.set_title(today.isoformat())
 
