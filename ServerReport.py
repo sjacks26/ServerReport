@@ -136,13 +136,17 @@ def check_process_status(process_list=cfg.processes_to_monitor):
                 broken_processes.append(process)
                 process_info = ['Ambiguous process name: {}'.format(process),'','','','','']
             else:
+                info = {}
                 pid = process_pids[0]
-                info = p.Process(pid).as_dict(attrs=['create_time','memory_info','memory_percent','username','cpu_percent'])
-                info['create_time'] = datetime.datetime.utcfromtimestamp(info['create_time']).replace(microsecond=0).isoformat()
-                info['memory_info'] = str(round(convert_byte_to(info['memory_info'].rss, from_unit='b', to='g'), 2)) + "G"
-                info['memory_percent'] = str(round(info['memory_percent'], 2))
-                info['cpu_percent'] = str(round(info['cpu_percent'], 2))
+                process_info_base = p.Process(pid)
+                #info = p.Process(pid).as_dict(attrs=['create_time', 'memory_info', 'memory_percent', 'username', 'cpu_percent'])
+                info['create_time'] = datetime.datetime.utcfromtimestamp(process_info_base.create_time()).replace(microsecond=0).isoformat()
+                info['memory_info'] = str(round(convert_byte_to(process_info_base.memory_info().rss, from_unit='b', to='g'), 2)) + "G"
+                info['memory_percent'] = str(round(process_info_base.memory_percent(), 2))
+                cpu_percent = process_info_base.cpu_percent(interval=.2)
+                info['cpu_percent'] = str(round(cpu_percent, 2))
                 info['report_time'] = time
+                info['username'] = process_info_base.username()
                 process_info = info
                 process_flags[process] = 0
         else:
