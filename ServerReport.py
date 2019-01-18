@@ -31,6 +31,8 @@ import traceback
 import matplotlib.pyplot as plt
 
 import config as cfg
+if cfg.check_stacks:
+    from STACKS_checks import *
 
 logging.basicConfig(filename=cfg.script_log_file,filemode='a+',level=logging.INFO)
 
@@ -196,7 +198,7 @@ def log_stats(cpu, ram, hard_drive, boot_drive, processes, log_dir=cfg.stats_arc
     now = datetime.datetime.now().replace(microsecond=0)
     date = str(now.date())
     time = str(now.isoformat().split('T')[1])
-    logging.info(time)
+    #logging.info(time)
     os.makedirs(log_dir, exist_ok=True)
     log_file = log_dir + '/stats_log.csv'
 
@@ -558,6 +560,10 @@ def run():
     monitoring = True
     while monitoring:
         try:
+            now = datetime.datetime.now().replace(microsecond=0)
+            logging.info(now.isoformat().replace('T', ' '))
+            if cfg.check_stacks:
+                stacks_flags = check_stacks_details()
             CPU_usage = check_cpu()
             RAM_usage = check_ram()
             hard_drive_stats = check_hard_drive()
@@ -567,7 +573,7 @@ def run():
             now = datetime.datetime.now()
             gap = ((now.hour + (now.minute/60)) - cfg.daily_report_hour) * 60
             if cfg.daily_email_desired:
-                if (gap > 0) and (gap <= cfg.minutes_between_stats_check):
+                if (gap >= 0) and (gap <= cfg.minutes_between_stats_check):
                     if cfg.processes_to_monitor:
                         send_daily_email(computer_stats=daily_email_contents(), process_stats=prepare_process_summary())
                     elif not cfg.processes_to_monitor:
