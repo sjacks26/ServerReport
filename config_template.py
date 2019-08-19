@@ -16,6 +16,18 @@ processes_to_monitor = ["PROCESS1", "Process 2"]
 check_mongo = True
 delete_daily_process_stats_after_summary = False
 
+check_stacks = True
+stacks_params = {
+    "stacks_dir": "/home/bits/stack",
+    "projects": [{
+        "project_name": "Project1",
+        "collector_names": ["Collector1", "collector2", "collector-3"]
+    },{
+        "project_name": "Project2",
+        "collector_names": ["Collector1"]
+    }]
+}
+
 warning_email_recipients = ["SAMPLE@EMAIL"]
 daily_status_email_recipients = ["SAMPLE@EMAIL"]
 account_to_send_emails = 'SAMPLE'         # must be a gmail account. Don't include "@gmail.com"

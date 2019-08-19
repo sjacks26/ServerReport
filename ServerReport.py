@@ -31,6 +31,8 @@ import traceback
 import matplotlib.pyplot as plt
 
 import config as cfg
+if cfg.check_stacks:
+    from STACKS_checks import *
 
 logging.basicConfig(filename=cfg.script_log_file,filemode='a+',level=logging.INFO)
 
@@ -118,6 +120,8 @@ def check_process_status(process_list=cfg.processes_to_monitor):
         process_list = [process_list]
     processes_info = {}
     broken_processes = []
+    broken_processes_to_email = []
+    ambiguous_processes_to_email = []
     processes_to_email = []
     for process in process_list:
         time = str(datetime.datetime.now().replace(microsecond=0).isoformat().split('T')[1])
@@ -128,42 +132,55 @@ def check_process_status(process_list=cfg.processes_to_monitor):
         process_pids = [int(x[1]) for x in process_status]
         if process_status:
             if len(process_pids) > 1:
-                process_info = 'Ambiguous process name: {}'.format(process)
+                if process_flags[process] == 0:
+                    ambiguous_processes_to_email.append(process)
+                    process_flags[process] = 1
+                broken_processes.append(process)
+                process_info = ['Ambiguous process name: {}'.format(process),'','','','','']
             else:
+                info = {}
                 pid = process_pids[0]
-                info = p.Process(pid).as_dict(attrs=['create_time','memory_info','memory_percent','username','cpu_percent'])
-                info['create_time'] = datetime.datetime.utcfromtimestamp(info['create_time']).replace(microsecond=0).isoformat()
-                info['memory_info'] = str(round(convert_byte_to(info['memory_info'].rss, from_unit='b', to='g'), 2)) + "G"
-                info['memory_percent'] = str(round(info['memory_percent'], 2))
-                info['cpu_percent'] = str(round(info['cpu_percent'], 2))
+                process_info_base = p.Process(pid)
+                #info = p.Process(pid).as_dict(attrs=['create_time', 'memory_info', 'memory_percent', 'username', 'cpu_percent'])
+                info['create_time'] = datetime.datetime.utcfromtimestamp(process_info_base.create_time()).replace(microsecond=0).isoformat()
+                info['memory_info'] = str(round(convert_byte_to(process_info_base.memory_info().rss, from_unit='b', to='g'), 2)) + "G"
+                info['memory_percent'] = str(round(process_info_base.memory_percent(), 2))
+                cpu_percent = process_info_base.cpu_percent(interval=.2)
+                info['cpu_percent'] = str(round(cpu_percent, 2))
                 info['report_time'] = time
+                info['username'] = process_info_base.username()
                 process_info = info
                 process_flags[process] = 0
         else:
             if process_flags[process] == 0:
-                processes_to_email.append(process)
+                broken_processes_to_email.append(process)
                 process_flags[process] = 1
             broken_processes.append(process)
             process_info = [time, 'Process not running','','','','','']
         processes_info[process] = process_info
     if broken_processes:
-        logging.critical('BROKEN PROCESS(ES): {}'.format(broken_processes))
-        if processes_to_email:
-            trigger_process_warning(processes_to_email)
+        logging.critical('PROBLEM WITH PROCESS(ES): {}'.format(broken_processes))
+        if (broken_processes_to_email or ambiguous_processes_to_email):
+            trigger_process_warning(broken_processes_to_email, ambiguous_processes_to_email)
     return processes_info, process_flags
 
 
-def trigger_process_warning(broken_processes, email_recipients=cfg.warning_email_recipients):
+def trigger_process_warning(broken_processes, ambiguous_processes, email_recipients=cfg.warning_email_recipients):
     """
     This function immediately sends a warning email if a process in process_list=cfg.processes_to_monitor is not running.
     """
     if not type(email_recipients) is list:
         raise Exception("Email recipients must be in a list")
     email = EmailMessage()
-    email_text = "PROCESSES NOT RUNNING \n\n" + '\n'.join(broken_processes)
+    email_text = ''
+    if len(broken_processes) > 0:
+        email_text += "PROCESSES NOT RUNNING \n\n" + '\n\t'.join(broken_processes) + '\n\n'
+    if len(ambiguous_processes) > 0:
+        email_text += "AMBIGUOUS PROCESSES, UNABLE TO LOG STATS \n\n" + '\n\t'.join(ambiguous_processes) + '\n\n'
+
     email.set_content(email_text)
     time = str(datetime.datetime.now().replace(microsecond=0).isoformat().split('T')[1])
-    email['Subject'] = "{0}: Critical - broken process(es)".format(cfg.server_name, time)
+    email['Subject'] = "{0}: Critical - error in process(es)".format(cfg.server_name, time)
     email['From'] = cfg.account_to_send_emails + '@gmail.com'
     email['To'] = ", ".join(email_recipients)
 
@@ -181,7 +198,7 @@ def log_stats(cpu, ram, hard_drive, boot_drive, processes, log_dir=cfg.stats_arc
     now = datetime.datetime.now().replace(microsecond=0)
     date = str(now.date())
     time = str(now.isoformat().split('T')[1])
-    logging.info(time)
+    #logging.info(time)
     os.makedirs(log_dir, exist_ok=True)
     log_file = log_dir + '/stats_log.csv'
 
@@ -198,8 +215,8 @@ def log_stats(cpu, ram, hard_drive, boot_drive, processes, log_dir=cfg.stats_arc
     f.write(write_info)
     f.close()
 
-    write_info = ''
     for process in processes:
+        write_info = ''
         process_log_dir = log_dir + '/processes/' + process
         os.makedirs(process_log_dir, exist_ok=True)
         log_file = process_log_dir + '/' + date + '.csv'
@@ -370,7 +387,10 @@ def prepare_process_summary(processes=cfg.processes_to_monitor):
             create_time = log_contents['create_time'].dropna().unique()
             if len(create_time) == 0:
                 create_time = ['None found']
-            write_info = [yesterday, log_contents['status'].iloc[-1], create_time[0], stats_to_report['memory_info'], stats_to_report['memory_percent'], stats_to_report['cpu_percent']]
+            status = log_contents['status'].iloc[-1]
+            if pd.isnull(status):
+                status = 'nan'
+            write_info = [yesterday, status, create_time[0], stats_to_report['memory_info'], stats_to_report['memory_percent'], stats_to_report['cpu_percent']]
             write_info = ','.join(write_info)
             f.write(write_info)
             if cfg.delete_daily_process_stats_after_summary:
@@ -430,7 +450,7 @@ def daily_email_contents(log_dir=cfg.stats_archive_dir):
                         plot1.plot_date(data_points['time'], data_points[m], fmt='-', color=line_color, ls=line_type, label=m)
                         plot.autofmt_xdate()
                         if '%' in m:
-                            plot1.set_ylim(0, 100)
+                            plot1.set_ylim(0, 105)
                         plot1.set_xlabel('Time of day')
                         plot1.set_title(today.isoformat())
 
@@ -540,6 +560,10 @@ def run():
     monitoring = True
     while monitoring:
         try:
+            now = datetime.datetime.now().replace(microsecond=0)
+            logging.info(now.isoformat().replace('T', ' '))
+            if cfg.check_stacks:
+                stacks_flags = check_stacks_details()
             CPU_usage = check_cpu()
             RAM_usage = check_ram()
             hard_drive_stats = check_hard_drive()
@@ -549,7 +573,7 @@ def run():
             now = datetime.datetime.now()
             gap = ((now.hour + (now.minute/60)) - cfg.daily_report_hour) * 60
             if cfg.daily_email_desired:
-                if (gap > 0) and (gap <= cfg.minutes_between_stats_check):
+                if (gap >= 0) and (gap <= cfg.minutes_between_stats_check):
                     if cfg.processes_to_monitor:
                         send_daily_email(computer_stats=daily_email_contents(), process_stats=prepare_process_summary())
                     elif not cfg.processes_to_monitor:
